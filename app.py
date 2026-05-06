@@ -1,14 +1,21 @@
 import streamlit as st
 import time
 import datetime
+import random
+import io
 from borax.calendars.lunardate import LunarDate
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 
 # ==========================================
 # 一、 全局视觉与状态管理
 # ==========================================
 
 st.set_page_config(
-    page_title="玄学推演系统 (纯血架构)",
+    page_title="人生剧本推演",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -235,7 +242,7 @@ def cyber_deduction_engine(stock_code, input_date, period="一个月"):
         overall_desc += f"（另有 {null_count} 处空亡位，增加不确定性）"
 
     # ------ 6.2 特殊形态检测（停滞位 & 物极必反） ------
-    # 逐段扫描连续同属性爻（None 打断连续性）
+    # 逐段扫描连续同属性（None 打断连续性）
     consecutive_patterns = []
     ci = 0
     while ci < 6:
@@ -256,28 +263,32 @@ def cyber_deduction_engine(stock_code, input_date, period="一个月"):
 
     pattern_warnings = []
     for cp in consecutive_patterns:
-        yao_range = '、'.join(YAO_NAMES[cp['start']:cp['end'] + 1])
+        # 用时间阶段名替代爻位术语
+        if cp['start'] == cp['end']:
+            time_range = phases[cp['start']]
+        else:
+            time_range = f"{phases[cp['start']]}～{phases[cp['end']]}"
         if cp['length'] >= 3:
             # 物极必反
             if cp['value'] == 0:
                 pattern_warnings.append(
-                    f"🚨 **物极必反（极阴生阳）**：{yao_range} 出现连续 {cp['length']} 阴，"
+                    f"🚨 **物极必反（极阴生阳）**：{time_range} 出现连续下行，"
                     f"行情走至极端——**先出清深跌探底，随后强力触底反弹收涨**，切勿恐慌割肉！"
                 )
             else:
                 pattern_warnings.append(
-                    f"🚨 **物极必反（极阳生阴）**：{yao_range} 出现连续 {cp['length']} 阳，"
+                    f"🚨 **物极必反（极阳生阴）**：{time_range} 出现连续上行，"
                     f"行情走至极端——**先急涨拉升冲顶，随后见顶暴跌回落**，切勿盲目追高！"
                 )
         else:  # length == 2 -> 停滞位
             if cp['value'] == 0:
                 pattern_warnings.append(
-                    f"🔍 **停滞位（阴滞）**：{yao_range} 连续 2 阴，"
+                    f"🔍 **停滞位（阴滞）**：{time_range} 连续偏弱，"
                     f"空方力量僵持但跌幅有限，该阶段呈筑底震荡、多空拉锯态势。"
                 )
             else:
                 pattern_warnings.append(
-                    f"🔍 **停滞位（阳滞）**：{yao_range} 连续 2 阳，"
+                    f"🔍 **停滞位（阳滞）**：{time_range} 连续偏强，"
                     f"多方力量钝化上攻受阻，该阶段呈高位整理、涨势放缓态势。"
                 )
 
@@ -291,7 +302,7 @@ def cyber_deduction_engine(stock_code, input_date, period="一个月"):
         # 情形A：空亡位
         if nv is None:
             narrative_parts.append(
-                f"{nstep}. **{phases[ni]}**（{YAO_NAMES[ni]}空亡）："
+                f"{nstep}. **{phases[ni]}**："
                 f"方向不明，处于无序震荡过渡期，多空双方均缺乏有效引导信号。"
             )
             ni += 1
@@ -305,46 +316,45 @@ def cyber_deduction_engine(stock_code, input_date, period="一个月"):
         nrun = nj - ni
 
         time_label = phases[ni] if nrun == 1 else f"{phases[ni]}～{phases[nj - 1]}"
-        yao_label = YAO_NAMES[ni] if nrun == 1 else '、'.join(YAO_NAMES[ni:nj])
 
         if nrun >= 3:
             # 物极必反
             if nv == 0:
                 narrative_parts.append(
-                    f"{nstep}. **{time_label}**（{yao_label} 连续 {nrun} 阴）："
-                    f"陷入持续下行通道，空方主导。但连续 {nrun} 阴触发 **物极必反** 机制，"
+                    f"{nstep}. **{time_label}**："
+                    f"陷入持续下行通道，空方主导。但连续下行触发 **物极必反** 机制，"
                     f"预判先历经深度杀跌后将迎来强势反弹拉升。"
                 )
             else:
                 narrative_parts.append(
-                    f"{nstep}. **{time_label}**（{yao_label} 连续 {nrun} 阳）："
-                    f"进入强势上攻行情，多方主导。但连续 {nrun} 阳触发 **物极必反** 机制，"
+                    f"{nstep}. **{time_label}**："
+                    f"进入强势上攻行情，多方主导。但连续上行触发 **物极必反** 机制，"
                     f"预判先经历急速冲高后将面临重力回调下跌。"
                 )
         elif nrun == 2:
             # 停滞位
             if nv == 0:
                 narrative_parts.append(
-                    f"{nstep}. **{time_label}**（{yao_label} 连续 2 阴）："
+                    f"{nstep}. **{time_label}**："
                     f"走势偏弱，形成 **停滞位**。下方存在支撑，跌幅有限，"
                     f"多空拉锯呈筑底震荡格局。"
                 )
             else:
                 narrative_parts.append(
-                    f"{nstep}. **{time_label}**（{yao_label} 连续 2 阳）："
+                    f"{nstep}. **{time_label}**："
                     f"走势偏强，形成 **停滞位**。上方存在压力，涨势放缓，"
                     f"呈高位整理蓄势态势。"
                 )
         else:
-            # 单爻
+            # 单段
             if nv == 1:
                 narrative_parts.append(
-                    f"{nstep}. **{phases[ni]}**（{YAO_NAMES[ni]}阳）："
+                    f"{nstep}. **{phases[ni]}**："
                     f"受做多动能驱动，走势偏向上涨，资金入场意愿明确。"
                 )
             else:
                 narrative_parts.append(
-                    f"{nstep}. **{phases[ni]}**（{YAO_NAMES[ni]}阴）："
+                    f"{nstep}. **{phases[ni]}**："
                     f"受做空动能压制，走势偏向下跌，承压回调风险增大。"
                 )
 
@@ -376,26 +386,10 @@ def cyber_deduction_engine(stock_code, input_date, period="一个月"):
         """格式化序列，含 Null 显示"""
         return ', '.join('Null' if v is None else str(v) for v in seq)
 
-    report = f"### 🔮 《天机推演纪要：{code_str}》\n\n"
+    report = f"### 🔮 《剧本推演纪要：{code_str}》\n\n"
     report += f"**推演基准历法**：农历 {lunar.year}年 {lunar.month}月 {lunar.day}日 "
     report += f"（{year_gz}年 {month_gz}月 {day_gz}日）\n\n"
     report += f"**推演周期**：{period}\n\n"
-    report += "---\n\n"
-
-    # 核心矩阵解析表
-    report += "#### 📊 核心矩阵解析\n\n"
-    report += "| 解码层级 | 内卦（下卦） | 外卦（上卦） |\n"
-    report += "|:--------:|:----------:|:----------:|\n"
-    report += f"| 标的卦位 | {GUA_NAMES[inner_gua]} | {GUA_NAMES[outer_gua]} |\n"
-    report += f"| 年时间卦 | {GUA_NAMES[get_gua_by_char(year_gz[1])]} | {GUA_NAMES[get_gua_by_char(year_gz[0])]} |\n"
-    report += f"| 月时间卦 | {GUA_NAMES[get_gua_by_char(month_gz[1])]} | {GUA_NAMES[get_gua_by_char(month_gz[0])]} |\n"
-    report += f"| 日时间卦 | {GUA_NAMES[get_gua_by_char(day_gz[1])]} | {GUA_NAMES[get_gua_by_char(day_gz[0])]} |\n\n"
-
-    # 各级序列展示
-    report += f"- **股票后天卦序列**：`[{', '.join(map(str, stock_hex))}]`\n"
-    report += f"- **年月动能序列**：`[{', '.join(map(str, env_seq))}]`\n"
-    report += f"- **初级共振序列**：`[{_fmt(primary_seq)}]`\n"
-    report += f"- **终极过滤序列**：`[{_fmt(final_seq)}]`\n\n"
     report += "---\n\n"
 
     # 整体多空研判
@@ -413,8 +407,6 @@ def cyber_deduction_engine(stock_code, input_date, period="一个月"):
     # 阶段走势推演
     report += "---\n\n"
     report += f"#### 📈 阶段走势推演（{phase_info['unit']}时间轴）\n\n"
-    report += (f"> 终极序列从初爻（第1位）至上爻（第6位），严格对应"
-               f"{phase_info['unit']}周期的时间流逝过程。\n\n")
     for part in narrative_parts:
         report += f"{part}\n\n"
 
@@ -423,16 +415,15 @@ def cyber_deduction_engine(stock_code, input_date, period="一个月"):
     report += "#### 💡 综合推演结论\n\n"
     report += conclusion + "\n\n"
     report += "---\n\n"
-    report += ("*批注：推演序列基于《洛书》数理与时空干支动态同频映射生成，"
-               "纯代码离线运算闭环。天机不可泄露殆尽，仅供参考。*\n")
+    report += "*批注：推演基于数理模型离线运算生成，仅供参考。*\n"
 
-    return report
+    return report, final_seq, phases
 
 # ==========================================
 # 四、 登录/注册页
 # ==========================================
 def render_login_page():
-    st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>☯️ 纯血玄学股票推演系统</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>☯️ 人生剧本推演</h1>", unsafe_allow_html=True)
     
     col_left, col_right = st.columns([2, 1])
     
@@ -478,7 +469,7 @@ def render_main_page():
     with nav_col3: st.markdown("<div style='padding-top:10px;'>⚙️ 回测控制台</div>", unsafe_allow_html=True)
     
     with nav_power:
-        st.markdown(f"<div style='text-align: right; padding-top: 10px; font-size: 18px; font-weight: bold; color: #00FFCC;'>✨ 剩余灵力：{st.session_state.spiritual_power}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: right; padding-top: 10px; font-size: 18px; font-weight: bold; color: #00FFCC;'>✨ 剩余气：{st.session_state.spiritual_power}</div>", unsafe_allow_html=True)
         
     with nav_logout:
         if st.button("退出", use_container_width=True):
@@ -487,8 +478,8 @@ def render_main_page():
             
     st.divider()
 
-    st.markdown("<h2 style='text-align: center;'>🤖 纯血代码数学推演引擎</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #777;'>⚠️ 免责声明：本引擎基于洛书及干支历法完全离线推演，不依赖任何外部行情API。</p>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🤖 人生剧本推演引擎</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #777;'>⚠️ 免责声明：本引擎基于数理模型完全离线推演，不依赖任何外部行情API。</p>", unsafe_allow_html=True)
     st.write("")
 
     st.markdown("#### ⏳ 推演时间跨度")
@@ -532,28 +523,197 @@ def render_main_page():
             with st.spinner("起卦中... 正在剥离表象，洞察时空干支共振..."):
                 time.sleep(1.5) # 模拟深邃的推演过程
                 
-                # 调用纯血离线引擎，传入用户选择的推演周期
-                report_text = cyber_deduction_engine(
+                # 调用推演引擎，传入用户选择的推演周期
+                report_text, final_seq, phases = cyber_deduction_engine(
                     symbol_input, target_date, st.session_state.selected_period
                 )
                 
-                # 扣除灵力
+                # 扣除气
                 st.session_state.spiritual_power -= 1
                 
                 # 保存上下文数据
                 st.session_state.deduction_data = {
                     "symbol": symbol_input,
                     "date": target_date,
-                    "report": report_text
+                    "report": report_text,
+                    "final_seq": final_seq,
+                    "phases": phases,
                 }
                 # 跳转结果页
                 st.session_state.current_page = "result"
                 st.rerun()
         else:
-            st.error("❌ 灵力不足，请充值！")
+            st.error("❌ 气不足，请充值！")
 
 # ==========================================
-# 六、 纯文本解盘结果页 (render_result_page)
+# 5.5  K线走势图生成器
+# ==========================================
+def generate_kline_chart(final_seq, phases, symbol):
+    """
+    基于 final_seq 生成模拟K线图。
+    阳(1)=阳线(红), 阴(0)=阴线(绿), None=十字星(灰)
+    连续同属性会累积动能，物极必反位带长影线。
+    """
+    if not final_seq or not phases or len(final_seq) != len(phases):
+        return None
+
+    random.seed(hash(symbol) % 10000)
+
+    # 生成模拟价格数据
+    base_price = 50.0 + (hash(symbol) % 50)
+    ohlc_data = []
+    current_open = base_price
+
+    # 预扫描连续段以确定动能强度
+    momentum_map = [1.0] * 6
+    i = 0
+    while i < 6:
+        v = final_seq[i]
+        if v is None:
+            i += 1
+            continue
+        j = i + 1
+        while j < 6 and final_seq[j] == v:
+            j += 1
+        run_len = j - i
+        for k in range(i, j):
+            # 连续越长，动能越强，后段递增
+            momentum_map[k] = 1.0 + (k - i) * 0.5
+            if run_len >= 3 and k == j - 1:
+                # 物极必反：最后一根动能减弱并标记反转
+                momentum_map[k] = -0.3  # 负值标记反转
+        i = j
+
+    for idx in range(6):
+        v = final_seq[idx]
+        momentum = abs(momentum_map[idx])
+        is_reversal = momentum_map[idx] < 0
+
+        # 基础波动幅度
+        base_range = base_price * 0.02 * momentum
+        noise = random.uniform(0.3, 0.7)
+
+        if v is None:
+            # 十字星：开收几乎相同
+            body = base_range * 0.05 * noise
+            high_ext = base_range * 0.4 * random.uniform(0.5, 1.0)
+            low_ext = base_range * 0.4 * random.uniform(0.5, 1.0)
+            close_price = current_open + random.choice([-1, 1]) * body
+            high_price = max(current_open, close_price) + high_ext
+            low_price = min(current_open, close_price) - low_ext
+        elif v == 1:
+            # 阳线（上涨）
+            body = base_range * noise
+            if is_reversal:
+                # 物极必反：先冲高后回落，长上影线
+                high_ext = body * 2.0
+                body = body * 0.3
+                close_price = current_open + body
+                high_price = current_open + high_ext
+                low_price = current_open - base_range * 0.1
+            else:
+                close_price = current_open + body
+                high_price = close_price + base_range * 0.3 * random.uniform(0.2, 0.8)
+                low_price = current_open - base_range * 0.15 * random.uniform(0.2, 0.6)
+        else:
+            # 阴线（下跌）
+            body = base_range * noise
+            if is_reversal:
+                # 物极必反：先探底后反弹，长下影线
+                low_ext = body * 2.0
+                body = body * 0.3
+                close_price = current_open - body
+                low_price = current_open - low_ext
+                high_price = current_open + base_range * 0.1
+            else:
+                close_price = current_open - body
+                low_price = close_price - base_range * 0.3 * random.uniform(0.2, 0.8)
+                high_price = current_open + base_range * 0.15 * random.uniform(0.2, 0.6)
+
+        ohlc_data.append({
+            'open': round(current_open, 2),
+            'high': round(high_price, 2),
+            'low': round(low_price, 2),
+            'close': round(close_price, 2),
+            'value': v,
+        })
+        # 下一根K线的开盘价 = 当前收盘价附近
+        current_open = close_price + random.uniform(-base_price * 0.003, base_price * 0.003)
+
+    # ---- 绘图 ----
+    fig, ax = plt.subplots(figsize=(10, 5), facecolor='#0d0f12')
+    ax.set_facecolor('#0d0f12')
+
+    bar_width = 0.6
+    for idx, bar in enumerate(ohlc_data):
+        o, h, l, c, v = bar['open'], bar['high'], bar['low'], bar['close'], bar['value']
+
+        if v is None:
+            color = '#888888'
+            edge_color = '#aaaaaa'
+        elif c >= o:
+            color = '#e74c3c'      # 红色=涨（中国股市）
+            edge_color = '#e74c3c'
+        else:
+            color = '#2ecc71'      # 绿色=跌
+            edge_color = '#2ecc71'
+
+        # 上下影线
+        ax.plot([idx, idx], [l, h], color=edge_color, linewidth=1.5, solid_capstyle='round')
+
+        # 实体
+        body_bottom = min(o, c)
+        body_height = abs(c - o)
+        if body_height < (h - l) * 0.02:
+            body_height = (h - l) * 0.02  # 十字星最小实体
+        rect = mpatches.FancyBboxPatch(
+            (idx - bar_width / 2, body_bottom), bar_width, body_height,
+            boxstyle="round,pad=0.02",
+            facecolor=color, edgecolor=edge_color, linewidth=1.2
+        )
+        ax.add_patch(rect)
+
+    # 样式设置
+    ax.set_xlim(-0.8, 5.8)
+    all_highs = [b['high'] for b in ohlc_data]
+    all_lows = [b['low'] for b in ohlc_data]
+    price_range = max(all_highs) - min(all_lows)
+    ax.set_ylim(min(all_lows) - price_range * 0.15, max(all_highs) + price_range * 0.15)
+
+    ax.set_xticks(range(6))
+    ax.set_xticklabels(phases, fontsize=10, color='#cccccc',
+                       fontfamily=['Microsoft YaHei', 'SimHei', 'sans-serif'])
+
+    ax.tick_params(axis='y', colors='#666666', labelsize=9)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.1f}'))
+
+    # 网格
+    ax.grid(axis='y', color='#1a1d23', linewidth=0.5, linestyle='--')
+    ax.grid(axis='x', color='#1a1d23', linewidth=0.3, linestyle=':')
+
+    # 去掉边框
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    # 图例
+    legend_elements = [
+        Line2D([0], [0], color='#e74c3c', lw=4, label='上涨（阳）'),
+        Line2D([0], [0], color='#2ecc71', lw=4, label='下跌（阴）'),
+        Line2D([0], [0], color='#888888', lw=4, label='方向不明'),
+    ]
+    ax.legend(handles=legend_elements, loc='upper left', fontsize=9,
+              facecolor='#1a1d23', edgecolor='#333', labelcolor='#cccccc',
+              prop={'family': ['Microsoft YaHei', 'SimHei', 'sans-serif']})
+
+    ax.set_title(f'{symbol} 阶段走势推演', fontsize=14, color='#e0e0e0', pad=15,
+                 fontfamily=['Microsoft YaHei', 'SimHei', 'sans-serif'])
+
+    plt.tight_layout()
+    return fig
+
+
+# ==========================================
+# 六、 结果页 (render_result_page)
 # ==========================================
 def render_result_page():
     # 顶部操作区
@@ -563,7 +723,7 @@ def render_result_page():
             st.session_state.current_page = "main"
             st.rerun()
     with top_col2:
-        st.markdown(f"<div style='text-align: right; padding-top: 5px; font-size: 18px; font-weight: bold; color: #00FFCC;'>✨ 剩余灵力：{st.session_state.spiritual_power}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: right; padding-top: 5px; font-size: 18px; font-weight: bold; color: #00FFCC;'>✨ 剩余气：{st.session_state.spiritual_power}</div>", unsafe_allow_html=True)
         
     st.divider()
     
@@ -571,16 +731,27 @@ def render_result_page():
     symbol = data.get("symbol", "未知标的")
     report = data.get("report", "天机被蒙蔽，未获得有效报告。")
     
-    st.markdown(f"<h1 style='text-align: center; color: #ff4b4b; margin-bottom: 40px;'>标的 {symbol} 勘验录</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='text-align: center; color: #ff4b4b; margin-bottom: 40px;'>标的 {symbol} 剧本推演</h1>", unsafe_allow_html=True)
     
     # 使用优雅的卡片包裹报告
-    st.success("天机已破译，解盘报告如下：")
+    st.success("推演完成，报告如下：")
     
     # 直接使用 st.markdown 渲染报告（正确处理 Markdown 语法）
     st.markdown(report)
     
+    # ------ K线走势图 ------
+    final_seq = data.get("final_seq", [])
+    phases = data.get("phases", [])
+    if final_seq and phases:
+        st.markdown("---")
+        st.markdown("#### 📊 阶段走势 K 线图")
+        fig = generate_kline_chart(final_seq, phases, symbol)
+        if fig is not None:
+            st.pyplot(fig)
+            plt.close(fig)
+    
     st.write("")
-    st.info("注：上述结果完全由代码数学模型离线推演生成。如需对比其他时间线，请返回重新推演。")
+    st.info("注：上述结果完全由数理模型离线推演生成。如需对比其他时间线，请返回重新推演。")
 
 # ==========================================
 # 七、 主路由控制
